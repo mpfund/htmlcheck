@@ -17,7 +17,7 @@ const (
 	InvDuplicatedAttribute Invalidation = 4
 )
 
-type InvalidationCallback func(tagName string, attributeName string, reason Invalidation) bool
+type InvalidationCallback func(tagName string, attributeName string, value string, reason Invalidation) bool
 
 type ValidTag struct {
 	Name          string
@@ -81,9 +81,9 @@ func (v *Validator) ValidateHtmlString(str string) error {
 	return v.ValidateHtml(buffer)
 }
 
-func (v *Validator) checkInvalidationCallback(tagName string, attr string, reason Invalidation) bool {
+func (v *Validator) checkInvalidationCallback(tagName string, attr string, value string, reason Invalidation) bool {
 	if v.invalidationCallback != nil {
-		return v.invalidationCallback(tagName, attr, reason)
+		return v.invalidationCallback(tagName, attr, value, reason)
 	}
 	return false
 }
@@ -126,7 +126,7 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 			tagName := token.Data
 
 			if !v.IsValidTag(tagName) &&
-				!v.checkInvalidationCallback(tagName, "", InvTag) {
+				!v.checkInvalidationCallback(tagName, "", "", InvTag) {
 				return GetError(tagName, "", InvTag)
 			}
 
@@ -134,14 +134,14 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 
 			for _, attr := range token.Attr {
 				if !v.IsValidAttribute(tagName, attr.Key) &&
-					!v.checkInvalidationCallback(tagName, attr.Key, InvTag) {
+					!v.checkInvalidationCallback(tagName, attr.Key, attr.Val, InvTag) {
 					return GetError(tagName, attr.Key, InvAttribute)
 				}
 				_, ok := attrs[attr.Key]
 				if !ok {
 					attrs[attr.Key] = true
 				} else {
-					if !v.checkInvalidationCallback(tagName, attr.Key, InvDuplicatedAttribute) {
+					if !v.checkInvalidationCallback(tagName, attr.Key, attr.Val, InvDuplicatedAttribute) {
 						return GetError(tagName, attr.Key, InvDuplicatedAttribute)
 					}
 				}
@@ -160,7 +160,7 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 					openClosedCount[tagName] = i - 1
 				} else {
 					if tokenType == html.EndTagToken {
-						if !v.checkInvalidationCallback(tagName, "", InvClosedBeforeOpened) {
+						if !v.checkInvalidationCallback(tagName, "", "", InvClosedBeforeOpened) {
 							return GetError(tagName, "", InvClosedBeforeOpened)
 						}
 					}
@@ -171,7 +171,7 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 
 	for tagName, m := range openClosedCount {
 		if m > 0 && !v.IsValidSelfClosingTag(tagName) &&
-			!v.checkInvalidationCallback(tagName, "", InvNotProperlyClosed) {
+			!v.checkInvalidationCallback(tagName, "", "", InvNotProperlyClosed) {
 			return GetError(tagName, "", InvNotProperlyClosed)
 		}
 	}
