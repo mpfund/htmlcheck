@@ -21,23 +21,20 @@ func main() {
 	validater.AddValidTag(validLink)
 	// first check
 	err := validater.ValidateHtmlString("<a href='http://google.com'>m</a>")
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	} else {
+	if err == nil {
 		fmt.Println("ok")
+	} else {
+		fmt.Println(err.Error())
 	}
-	
+
 	// second check
-  // notice the missing / in the second <a>:
+	// notice the missing / in the second <a>:
 	err = validater.ValidateHtmlString("<a href='http://google.com'>m<a>")
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	} else {
+	if err == nil {
 		fmt.Println("ok")
+	} else {
+		fmt.Println(err.Error())
 	}
-}
 ```
 
 prints
