@@ -115,7 +115,6 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 			if d.Err() == io.EOF {
 				break
 			}
-
 			return d.Err()
 		}
 		token := d.Token()
@@ -136,7 +135,7 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 
 			for _, attr := range token.Attr {
 				if !v.IsValidAttribute(tagName, attr.Key) {
-					callbackerr := v.checkInvalidationCallback(tagName, attr.Key, attr.Val, InvTag)
+					callbackerr := v.checkInvalidationCallback(tagName, attr.Key, attr.Val, InvAttribute)
 					if callbackerr != nil {
 						return callbackerr
 					}
@@ -183,5 +182,6 @@ func (v *Validator) ValidateHtml(r io.Reader) error {
 			}
 		}
 	}
+	
 	return nil
 }
