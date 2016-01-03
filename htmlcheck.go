@@ -235,8 +235,8 @@ func (v *Validator) checkToken(tokenType html.TokenType, token html.Token,
 		if token.Type == html.EndTagToken {
 			if len(parents) > 0 && parents[len(parents)-1] == tagName {
 				parents = popLast(parents)
-			} else if parents[len(parents)-1] != tagName ||
-				len(parents) == 0 {
+			} else if len(parents) == 0 ||
+				parents[len(parents)-1] != tagName {
 				index := indexOf(parents, tagName)
 				if index > -1 {
 					missingTagName := parents[len(parents)-1]
