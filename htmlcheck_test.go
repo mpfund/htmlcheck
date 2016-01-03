@@ -23,6 +23,11 @@ func TestMain(m *testing.M) {
 		Attrs:         []string{"id"},
 		IsSelfClosing: false,
 	})
+	v.AddValidTag(ValidTag{
+		Name:          "style",
+		Attrs:         []string{"id"},
+		IsSelfClosing: false,
+	})
 	os.Exit(m.Run())
 }
 
@@ -87,6 +92,45 @@ func Test_WronglyNestedTags(t *testing.T) {
 func Test_SwapedStartClosingTags(t *testing.T) {
 	errors := v.ValidateHtmlString("</b><b>")
 	hasErrors(t, errors, "b closed before opended")
+}
+
+func Test_NextedTagsWithSelfClosing(t *testing.T) {
+	errors := v.ValidateHtmlString("<b><a></b>")
+	checkErrors(t, errors)
+}
+
+func Test_NextedTagsWithUnkonwAttribute1(t *testing.T) {
+	errors := v.ValidateHtmlString("<b kkk='kkk'><a></b>")
+	if len(errors) != 1 {
+		t.Fatal("should raise invalid attribute error")
+	}
+}
+
+func Test_NextedTagsWithUnkonwAttribute2(t *testing.T) {
+	errors := v.ValidateHtmlString("<b><a kkk='kkk'></b>")
+	if len(errors) != 1 {
+		t.Fatal("should raise invalid attribute error")
+	}
+}
+
+func Test_LineColumn_SingleLine(t *testing.T) {
+	errors := v.ValidateHtmlString("<b><a kkk='kkk'></b>")
+	if errors[0].TextPos.Line != 1 {
+		t.Fatal(errors[0].TextPos)
+	}
+	if errors[0].TextPos.Column != 5 {
+		t.Fatal(errors[0].TextPos)
+	}
+}
+
+func Test_LineColumn_MultipleLines(t *testing.T) {
+	errors := v.ValidateHtmlString("<b></b>\n<b></b>\n<b kkk='kkk'></b>")
+	if errors[0].TextPos.Line != 3 {
+		t.Fatal(errors[0].TextPos)
+	}
+	if errors[0].TextPos.Column != 2 {
+		t.Fatal(errors[0].TextPos)
+	}
 }
 
 func Test_IsValidAttribute(t *testing.T) {
