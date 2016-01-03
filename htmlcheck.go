@@ -135,25 +135,37 @@ func (v *Validator) ValidateHtml(r io.Reader) []*ValidationError {
 			errors = append(errors, err)
 			if v.StopAfterFirstError {
 				return errors
+			} else {
+				//parents = v.correctError(err, parents, tokenType, token)
 			}
-			/*else {
-				parents = v.correctError(err, parents,tokenType,token)
-			}*/
 		}
 	}
+
 	err = v.checkParents(parents)
-	if err !=nil{
-		errors = append(errors,err)
+	if err != nil {
+		errors = append(errors, err)
 	}
 	return errors
 }
 
+func indexOf(arr []string, val string) int {
+	for i, k := range arr {
+		if k == val {
+			return i
+		}
+	}
+	return -1
+}
+
 func (v *Validator) correctError(err *ValidationError, parents []string,
 	tokenType html.TokenType, token html.Token) []string {
-	if err.Reason == InvClosedBeforeOpened &&  tokenType == html.EndTagToken{
-		
+	if err.Reason == InvClosedBeforeOpened && tokenType == html.EndTagToken {
+		index := indexOf(parents, token.Data)
+		if index > -1 {
+			parents = parents[0:index]
+		}
 	}
-	fmt.Println("correct",parents,tokenType, token.Data)
+	fmt.Println("correct", parents, tokenType, token.Data)
 	return parents
 }
 
@@ -197,7 +209,8 @@ func (v *Validator) checkToken(tokenType html.TokenType, token html.Token,
 
 		for _, attr := range token.Attr {
 			if !v.IsValidAttribute(tagName, attr.Key) {
-				cError := v.checkErrorCallback(tagName, attr.Key, attr.Val, InvAttribute)
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, InvAttribute)
 				if cError != nil {
 					return parents, cError
 				}
@@ -206,7 +219,8 @@ func (v *Validator) checkToken(tokenType html.TokenType, token html.Token,
 			if !ok {
 				attrs[attr.Key] = true
 			} else {
-				cError := v.checkErrorCallback(tagName, attr.Key, attr.Val, InvDuplicatedAttribute)
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, InvDuplicatedAttribute)
 				if cError != nil {
 					return parents, cError
 				}
@@ -221,10 +235,23 @@ func (v *Validator) checkToken(tokenType html.TokenType, token html.Token,
 		if token.Type == html.EndTagToken {
 			if len(parents) > 0 && parents[len(parents)-1] == tagName {
 				parents = popLast(parents)
-			} else {
-				cError := v.checkErrorCallback(tagName, "", "", InvClosedBeforeOpened)
-				if cError != nil {
-					return parents, cError
+			} else if parents[len(parents)-1] != tagName ||
+				len(parents) == 0 {
+				index := indexOf(parents, tagName)
+				if index > -1 {
+					missingTagName := parents[len(parents)-1]
+					cError := v.checkErrorCallback(missingTagName,
+						"", "", InvNotProperlyClosed)
+					parents = parents[0:index]
+					if cError != nil {
+						return parents, cError
+					}
+				} else {
+					cError := v.checkErrorCallback(tagName,
+						"", "", InvClosedBeforeOpened)
+					if cError != nil {
+						return parents, cError
+					}
 				}
 			}
 		}
