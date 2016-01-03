@@ -1,75 +1,327 @@
-package main
+package htmlcheck
 
 import (
-	"encoding/csv"
-	"encoding/json"
-	"flag"
-	"github.com/BlackEspresso/htmlcheck"
-	"github.com/BlackEspresso/crawlbase"
-	"io/ioutil"
-	"log"
-	"os"
-	"path"
+	"unicode/utf8"
+	"fmt"
+	"golang.org/x/net/html"
+	"io"
+	"strconv"
+	"strings"
 )
 
-func main() {
-	var url, inputPath string
-	flag.StringVar(&url, "url", "http://google.com", "http://google.com")
-	flag.StringVar(&inputPath, "path", "./files/", "output path")
-	flag.Parse()
+type ErrorReason int
 
-	validater := htmlcheck.Validator{}
-	tags := loadTagsFromFile()
-	validater.AddValidTags(tags)
-	// first check
-	files, err := ioutil.ReadDir(inputPath)
-	logFatal(err)
-	records := [][]string{{"url", "error"}}
+const (
+	InvTag                 ErrorReason = 0
+	InvAttribute           ErrorReason = 1
+	InvClosedBeforeOpened  ErrorReason = 2
+	InvNotProperlyClosed   ErrorReason = 3
+	InvDuplicatedAttribute ErrorReason = 4
+	InvEOF                 ErrorReason = 5
+)
 
-	for _, k := range files {
-		fraw, err := ioutil.ReadFile(path.Join(inputPath, k.Name()))
-		logFatal(err)
-		var page crawlbase.Page
-		err = json.Unmarshal(fraw, &page)
-		logFatal(err)
-		errors := validater.ValidateHtmlString(page.Body)
-		ioutil.WriteFile("out.html",[]byte(page.Body),755)
-		text := ""
-		for _,k := range errors {
-			text += k.Error() + "\n"
+type Span struct {
+	Start int
+	End   int
+}
+
+type TextPos struct {
+	Line   int
+	Column int
+}
+
+type ErrorCallback func(tagName string, attributeName string,
+	value string, reason ErrorReason) *ValidationError
+
+type ValidTag struct {
+	Name          string
+	Attrs         []string
+	IsSelfClosing bool
+}
+
+type ValidationError struct {
+	TagName       string
+	AttributeName string
+	Reason        ErrorReason
+	Pos           Span
+	TextPos       *TextPos
+}
+
+func (e *ValidationError) Error() string {
+	text := ""
+	switch e.Reason {
+	case InvTag:
+		text = "tag '" + e.TagName + "' is not valid"
+	case InvAttribute:
+		text = "invalid attribute '" + e.AttributeName + "' in tag '" + e.TagName + "'"
+	case InvClosedBeforeOpened:
+		text = "'" + e.TagName + "' closed before opened."
+	case InvNotProperlyClosed:
+		text = "tag '" + e.TagName + "' is never closed"
+	case InvDuplicatedAttribute:
+		text = "duplicated attribute '" + e.AttributeName + "' in '" + e.TagName + "'"
+	}
+
+	pos := ""
+
+	start := strconv.Itoa(e.Pos.Start)
+	end := strconv.Itoa(e.Pos.End)
+	pos = " (" + start + ", " + end + ")"
+
+	if e.TextPos == nil {
+
+	} else {
+		line := strconv.Itoa(e.TextPos.Line)
+		column := strconv.Itoa(e.TextPos.Column)
+		pos = pos + " (L" + line + ", C" + column + ")"
+	}
+
+	return text + pos
+}
+
+type Validator struct {
+	validTagMap          map[string]map[string]bool
+	validSelfClosingTags map[string]bool
+	errorCallback        ErrorCallback
+	StopAfterFirstError  bool
+}
+
+func (v *Validator) AddValidTags(validTags []ValidTag) {
+	if v.validSelfClosingTags == nil {
+		v.validSelfClosingTags = make(map[string]bool)
+	}
+	if v.validTagMap == nil {
+		v.validTagMap = make(map[string]map[string]bool)
+	}
+
+	for _, tag := range validTags {
+		if tag.IsSelfClosing {
+			v.validSelfClosingTags[tag.Name] = true
 		}
-		row := []string{page.Url, text}
-		records = append(records, row)
-	}
-	toCSV(records)
-}
-
-func toCSV(records [][]string) {
-	f, err := os.Create("urls.csv")
-	defer f.Close()
-	logFatal(err)
-
-	w := csv.NewWriter(f)
-	w.WriteAll(records) // calls Flush internally
-
-	if err := w.Error(); err != nil {
-		log.Fatalln("error writing csv:", err)
+		v.validTagMap[tag.Name] = make(map[string]bool)
+		for _, a := range tag.Attrs {
+			v.validTagMap[tag.Name][a] = true
+		}
 	}
 }
 
-func loadTagsFromFile() []htmlcheck.ValidTag {
-	content, err := ioutil.ReadFile("tags.json")
-	logFatal(err)
-
-	var validTags []htmlcheck.ValidTag
-	err = json.Unmarshal(content, &validTags)
-	logFatal(err)
-
-	return validTags
+func (v *Validator) AddValidTag(validTag ValidTag) {
+	v.AddValidTags([]ValidTag{validTag})
 }
 
-func logFatal(err error) {
+func (v *Validator) RegisterCallback(f ErrorCallback) {
+	v.errorCallback = f
+}
+
+func (v *Validator) IsValidTag(tagName string) bool {
+	_, ok := v.validTagMap[tagName]
+	return ok
+}
+
+func (v *Validator) IsValidSelfClosingTag(tagName string) bool {
+	_, ok := v.validSelfClosingTags[tagName]
+	if !ok {
+		return false
+	}
+	return ok
+}
+
+func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
+	attrs, ok := v.validTagMap[tagName]
+	if !ok {
+		return false
+	}
+	_, ok = attrs[attrName]
+	return ok
+}
+
+func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
+	buffer := strings.NewReader(str)
+	errors := v.ValidateHtml(buffer)
+	updateLineColumns(str, errors)
+	return errors
+}
+
+func updateLineColumns(str string, errors []*ValidationError) {
+	str = strings.Replace(str,"\r","",-1)
+	lines := strings.Split(str, "\n")
+	for _, k := range errors {
+		charCount := 0
+		for i, l := range lines {
+			lineLen := utf8.RuneCountInString(l) + 1
+			if k.Pos.Start < (charCount + lineLen) {
+				tPos := TextPos{i + 1, k.Pos.Start - charCount + 1}
+				k.TextPos = &tPos
+				break
+			}
+			charCount += lineLen
+		}
+	}
+}
+
+func (v *Validator) checkErrorCallback(tagName string, attr string,
+	value string, span Span, reason ErrorReason) *ValidationError {
+	if v.errorCallback != nil {
+		return v.errorCallback(tagName, attr, value, reason)
+	}
+	return &ValidationError{tagName, attr, reason, span, nil}
+}
+
+func (v *Validator) ValidateHtml(r io.Reader) []*ValidationError {
+	d := html.NewTokenizer(r)
+	d.SetMaxBuf(400000)
+	parents := []string{}
+	var err *ValidationError
+	errors := []*ValidationError{}
+	for {
+		parents, err = v.checkToken(d, parents)
+
+		if err != nil {
+			if err.Reason == InvEOF {
+				break
+			}
+			errors = append(errors, err)
+			if v.StopAfterFirstError {
+				return errors
+			}
+		}
+	}
+
+	err = v.checkParents(d, parents)
 	if err != nil {
-		log.Fatal(err)
+		errors = append(errors, err)
 	}
+	return errors
+}
+
+func indexOf(arr []string, val string) int {
+	for i, k := range arr {
+		if k == val {
+			return i
+		}
+	}
+	return -1
+}
+
+func (v *Validator) correctError(err *ValidationError, parents []string,
+	tokenType html.TokenType, token html.Token) []string {
+	if err.Reason == InvClosedBeforeOpened && tokenType == html.EndTagToken {
+		index := indexOf(parents, token.Data)
+		if index > -1 {
+			parents = parents[0:index]
+		}
+	}
+	fmt.Println("correct", parents, tokenType, token.Data)
+	return parents
+}
+
+func (v *Validator) checkParents(d *html.Tokenizer, parents []string) *ValidationError {
+	for _, tagName := range parents {
+		if v.IsValidSelfClosingTag(tagName) {
+			continue
+		}
+		
+		pos := getPosition(d)
+		cError := v.checkErrorCallback(tagName, "", "", pos, InvNotProperlyClosed)
+		if cError != nil {
+			return cError
+		}
+	}
+	return nil
+}
+
+func popLast(list []string) []string {
+	if len(list) == 0 {
+		return list
+	}
+	return list[0 : len(list)-1]
+}
+
+func getPosition(d *html.Tokenizer)Span{
+	posStart, posEnd := d.GetPosition()
+	return Span{posStart, posEnd}
+}
+
+func (v *Validator) checkToken(d *html.Tokenizer,
+	parents []string) ([]string, *ValidationError) {
+
+	tokenType := d.Next()
+
+	if tokenType == html.ErrorToken {
+		return parents, &ValidationError{"", "", InvEOF, Span{0, 0}, nil}
+	}
+	
+	//pos := getPosition(d)
+	token := d.Token()
+	pos := getPosition(d)
+	fmt.Println(token.String(),pos)
+	
+	if tokenType == html.EndTagToken ||
+		tokenType == html.StartTagToken ||
+		tokenType == html.SelfClosingTagToken {
+
+		tagName := token.Data
+
+		if !v.IsValidTag(tagName) {
+			cError := v.checkErrorCallback(tagName, "", "", pos, InvTag)
+			if cError != nil {
+				return parents, cError
+			}
+		}
+
+		if token.Type == html.StartTagToken ||
+			token.Type == html.SelfClosingTagToken {
+			parents = append(parents, tagName)
+		}
+
+		attrs := map[string]bool{}
+
+		for _, attr := range token.Attr {
+			if !v.IsValidAttribute(tagName, attr.Key) {
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, pos, InvAttribute)
+				if cError != nil {
+					return parents, cError
+				}
+			}
+			_, ok := attrs[attr.Key]
+			if !ok {
+				attrs[attr.Key] = true
+			} else {
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, pos, InvDuplicatedAttribute)
+				if cError != nil {
+					return parents, cError
+				}
+			}
+		}
+
+		if token.Type == html.EndTagToken {
+			if len(parents) > 0 && parents[len(parents)-1] == tagName {
+				parents = popLast(parents)
+			} else if len(parents) == 0 ||
+				parents[len(parents)-1] != tagName {
+				index := indexOf(parents, tagName)
+				if index > -1 {
+					missingTagName := parents[len(parents)-1]
+					parents = parents[0:index]
+					if !v.IsValidSelfClosingTag(missingTagName) {
+						cError := v.checkErrorCallback(missingTagName,
+							"", "", pos, InvNotProperlyClosed)
+						if cError != nil {
+							return parents, cError
+						}
+					}
+				} else {
+					cError := v.checkErrorCallback(tagName,
+						"", "", pos, InvClosedBeforeOpened)
+					if cError != nil {
+						return parents, cError
+					}
+				}
+			}
+		}
+	}
+
+	return parents, nil
 }
