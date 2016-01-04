@@ -1,161 +1,321 @@
 package htmlcheck
 
 import (
-	"os"
-	"testing"
+	"fmt"
+	"golang.org/x/net/html"
+	"io"
+	"strconv"
+	"strings"
 )
 
-var v Validator = Validator{}
+type ErrorReason int
 
-func TestMain(m *testing.M) {
-	v.AddValidTag(ValidTag{
-		Name:          "a",
-		Attrs:         []string{"href"},
-		IsSelfClosing: true,
-	})
-	v.AddValidTag(ValidTag{
-		Name:          "b",
-		Attrs:         []string{"id"},
-		IsSelfClosing: false,
-	})
-	v.AddValidTag(ValidTag{
-		Name:          "c",
-		Attrs:         []string{"id"},
-		IsSelfClosing: false,
-	})
-	v.AddValidTag(ValidTag{
-		Name:          "style",
-		Attrs:         []string{"id"},
-		IsSelfClosing: false,
-	})
-	os.Exit(m.Run())
+const (
+	InvTag                 ErrorReason = 0
+	InvAttribute           ErrorReason = 1
+	InvClosedBeforeOpened  ErrorReason = 2
+	InvNotProperlyClosed   ErrorReason = 3
+	InvDuplicatedAttribute ErrorReason = 4
+	InvEOF                 ErrorReason = 5
+)
+
+type Span struct {
+	Start int
+	End   int
 }
 
-func checkErrors(t *testing.T, errors []*ValidationError) {
-	if len(errors) > 0 {
-		t.Fatal(errors)
+type TextPos struct {
+	Line   int
+	Column int
+}
+
+type ErrorCallback func(tagName string, attributeName string,
+	value string, reason ErrorReason) *ValidationError
+
+type ValidTag struct {
+	Name          string
+	Attrs         []string
+	IsSelfClosing bool
+}
+
+type ValidationError struct {
+	TagName       string
+	AttributeName string
+	Reason        ErrorReason
+	Pos           Span
+	TextPos       *TextPos
+}
+
+func (e *ValidationError) Error() string {
+	text := ""
+	switch e.Reason {
+	case InvTag:
+		text = "tag '" + e.TagName + "' is not valid"
+	case InvAttribute:
+		text = "invalid attribute '" + e.AttributeName + "' in tag '" + e.TagName + "'"
+	case InvClosedBeforeOpened:
+		text = "'" + e.TagName + "' closed before opened."
+	case InvNotProperlyClosed:
+		text = "tag '" + e.TagName + "' is never closed"
+	case InvDuplicatedAttribute:
+		text = "duplicated attribute '" + e.AttributeName + "' in '" + e.TagName + "'"
+	}
+
+	pos := ""
+
+	if e.TextPos == nil {
+		start := strconv.Itoa(e.Pos.Start)
+		end := strconv.Itoa(e.Pos.End)
+		pos = " (" + start + ", " + end + ")"
+	} else {
+		line := strconv.Itoa(e.TextPos.Line)
+		column := strconv.Itoa(e.TextPos.Column)
+		pos = pos + " (L" + line + ", C" + column + ")"
+	}
+
+	return text + pos
+}
+
+type Validator struct {
+	validTagMap          map[string]map[string]bool
+	validSelfClosingTags map[string]bool
+	errorCallback        ErrorCallback
+	StopAfterFirstError  bool
+}
+
+func (v *Validator) AddValidTags(validTags []ValidTag) {
+	if v.validSelfClosingTags == nil {
+		v.validSelfClosingTags = make(map[string]bool)
+	}
+	if v.validTagMap == nil {
+		v.validTagMap = make(map[string]map[string]bool)
+	}
+
+	for _, tag := range validTags {
+		if tag.IsSelfClosing {
+			v.validSelfClosingTags[tag.Name] = true
+		}
+		v.validTagMap[tag.Name] = make(map[string]bool)
+		for _, a := range tag.Attrs {
+			v.validTagMap[tag.Name][a] = true
+		}
 	}
 }
 
-func hasErrors(t *testing.T, errors []*ValidationError, text string) {
-	if len(errors) == 0 {
-		t.Fatal("should raise error: " + text)
-	}
-	t.Log(errors)
+func (v *Validator) AddValidTag(validTag ValidTag) {
+	v.AddValidTags([]ValidTag{validTag})
 }
 
-func Test_SingleTag(t *testing.T) {
-	errors := v.ValidateHtmlString("<a></a>")
-	checkErrors(t, errors)
+func (v *Validator) RegisterCallback(f ErrorCallback) {
+	v.errorCallback = f
 }
 
-func Test_SelfClosingTag(t *testing.T) {
-	errors := v.ValidateHtmlString("<a>")
-	checkErrors(t, errors)
+func (v *Validator) IsValidTag(tagName string) bool {
+	_, ok := v.validTagMap[tagName]
+	return ok
 }
 
-func Test_SingleAttr(t *testing.T) {
-	errors := v.ValidateHtmlString("<a href='test'>")
-	checkErrors(t, errors)
-}
-
-func Test_UnknownAttr(t *testing.T) {
-	errors := v.ValidateHtmlString("<a hrefff='test'>")
-	hasErrors(t, errors, "invalid attribute")
-}
-
-func Test_DuplicatedAttr(t *testing.T) {
-	errors := v.ValidateHtmlString("<a href='test' href='test2'>")
-	hasErrors(t, errors, "duplicated attribute")
-}
-
-func Test_SingleUnknownTag(t *testing.T) {
-	errors := v.ValidateHtmlString("<art>")
-	hasErrors(t, errors, "tag unkown")
-}
-
-func Test_UnclosedTag(t *testing.T) {
-	errors := v.ValidateHtmlString("<b>df")
-	hasErrors(t, errors, "tag unclosed")
-}
-
-func Test_NestedTags(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a></a></b>")
-	checkErrors(t, errors)
-}
-
-func Test_WronglyNestedTags(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><c></b></c>")
-	hasErrors(t, errors, "b closed before opended")
-}
-
-func Test_SwapedStartClosingTags(t *testing.T) {
-	errors := v.ValidateHtmlString("</b><b>")
-	hasErrors(t, errors, "b closed before opended")
-}
-
-func Test_NextedTagsWithSelfClosing(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a></b>")
-	checkErrors(t, errors)
-}
-
-func Test_NextedTagsWithUnkonwAttribute1(t *testing.T) {
-	errors := v.ValidateHtmlString("<b kkk='kkk'><a></b>")
-	if len(errors) != 1 {
-		t.Fatal("should raise invalid attribute error")
-	}
-}
-
-func Test_NextedTagsWithUnkonwAttribute2(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a kkk='kkk'></b>")
-	if len(errors) != 1 {
-		t.Fatal("should raise invalid attribute error")
-	}
-}
-
-func Test_LineColumn_SingleLine(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a kkk='kkk'></b>")
-	if errors[0].TextPos.Line != 1 {
-		t.Fatal(errors[0].TextPos)
-	}
-	if errors[0].TextPos.Column != 5 {
-		t.Fatal(errors[0].TextPos)
-	}
-}
-
-func Test_LineColumn_MultipleLines(t *testing.T) {
-	errors := v.ValidateHtmlString("<b></b>\n<b></b>\n<b kkk='kkk'></b>")
-	if errors[0].TextPos.Line != 3 {
-		t.Fatal(errors[0].TextPos)
-	}
-	if errors[0].TextPos.Column != 2 {
-		t.Fatal(errors[0].TextPos)
-	}
-}
-
-func Test_IsValidAttribute(t *testing.T) {
-	ok := v.IsValidAttribute("a", "href")
+func (v *Validator) IsValidSelfClosingTag(tagName string) bool {
+	_, ok := v.validSelfClosingTags[tagName]
 	if !ok {
-		t.Fatal("should return true")
+		return false
 	}
-	ok = v.IsValidAttribute("kkk", "href")
-	if ok {
-		t.Fatal("should return false")
+	return ok
+}
+
+func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
+	attrs, ok := v.validTagMap[tagName]
+	if !ok {
+		return false
+	}
+	_, ok = attrs[attrName]
+	return ok
+}
+
+func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
+	buffer := strings.NewReader(str)
+	errors := v.ValidateHtml(buffer)
+	updateLineColumns(str, errors)
+	return errors
+}
+
+func updateLineColumns(str string, errors []*ValidationError) {
+	lines := strings.Split(str, "\n")
+	for _, k := range errors {
+		charCount := 0
+		for i, l := range lines {
+			lineLen := len(l) + 1
+			if k.Pos.Start < (charCount + lineLen) {
+				tPos := TextPos{i + 1, k.Pos.Start - charCount + 1}
+				k.TextPos = &tPos
+				break
+			}
+			charCount += lineLen
+		}
 	}
 }
 
-func Test_Callback(t *testing.T) {
-	triggerd := false
-	v.RegisterCallback(func(tagName string, attributeName string,
-		value string, reason ErrorReason) *ValidationError {
-		triggerd = true
-		return nil
-	})
+func (v *Validator) checkErrorCallback(tagName string, attr string,
+	value string, span Span, reason ErrorReason) *ValidationError {
+	if v.errorCallback != nil {
+		return v.errorCallback(tagName, attr, value, reason)
+	}
+	return &ValidationError{tagName, attr, reason, span, nil}
+}
 
-	errors := v.ValidateHtmlString("<kk>")
-	if !triggerd {
-		t.Fatal("should trigger callback")
+func (v *Validator) ValidateHtml(r io.Reader) []*ValidationError {
+	d := html.NewTokenizer(r)
+	parents := []string{}
+	var err *ValidationError
+	errors := []*ValidationError{}
+	for {
+		parents, err = v.checkToken(d, parents)
+
+		if err != nil {
+			if err.Reason == InvEOF {
+				break
+			}
+			errors = append(errors, err)
+			if v.StopAfterFirstError {
+				return errors
+			}
+		}
 	}
 
-	checkErrors(t, errors)
+	err = v.checkParents(d, parents)
+	if err != nil {
+		errors = append(errors, err)
+	}
+	return errors
+}
+
+func indexOf(arr []string, val string) int {
+	for i, k := range arr {
+		if k == val {
+			return i
+		}
+	}
+	return -1
+}
+
+func (v *Validator) correctError(err *ValidationError, parents []string,
+	tokenType html.TokenType, token html.Token) []string {
+	if err.Reason == InvClosedBeforeOpened && tokenType == html.EndTagToken {
+		index := indexOf(parents, token.Data)
+		if index > -1 {
+			parents = parents[0:index]
+		}
+	}
+	fmt.Println("correct", parents, tokenType, token.Data)
+	return parents
+}
+
+func (v *Validator) checkParents(d *html.Tokenizer, parents []string) *ValidationError {
+	for _, tagName := range parents {
+		if v.IsValidSelfClosingTag(tagName) {
+			continue
+		}
+
+		pos := getPosition(d)
+		cError := v.checkErrorCallback(tagName, "", "", pos, InvNotProperlyClosed)
+		if cError != nil {
+			return cError
+		}
+	}
+	return nil
+}
+
+func popLast(list []string) []string {
+	if len(list) == 0 {
+		return list
+	}
+	return list[0 : len(list)-1]
+}
+
+func getPosition(d *html.Tokenizer) Span {
+	posStart, posEnd := d.GetRawPosition()
+	return Span{posStart, posEnd}
+}
+
+func (v *Validator) checkToken(d *html.Tokenizer,
+	parents []string) ([]string, *ValidationError) {
+
+	tokenType := d.Next()
+
+	if tokenType == html.ErrorToken {
+		return parents, &ValidationError{"", "", InvEOF, Span{0, 0}, nil}
+	}
+
+	pos := getPosition(d)
+	token := d.Token()
+	//pos := getPosition(d)
+
+	if tokenType == html.EndTagToken ||
+		tokenType == html.StartTagToken ||
+		tokenType == html.SelfClosingTagToken {
+
+		tagName := token.Data
+
+		if !v.IsValidTag(tagName) {
+			cError := v.checkErrorCallback(tagName, "", "", pos, InvTag)
+			if cError != nil {
+				return parents, cError
+			}
+		}
+
+		if token.Type == html.StartTagToken ||
+			token.Type == html.SelfClosingTagToken {
+			parents = append(parents, tagName)
+		}
+
+		attrs := map[string]bool{}
+
+		for _, attr := range token.Attr {
+			if !v.IsValidAttribute(tagName, attr.Key) {
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, pos, InvAttribute)
+				if cError != nil {
+					return parents, cError
+				}
+			}
+			_, ok := attrs[attr.Key]
+			if !ok {
+				attrs[attr.Key] = true
+			} else {
+				cError := v.checkErrorCallback(tagName, attr.Key,
+					attr.Val, pos, InvDuplicatedAttribute)
+				if cError != nil {
+					return parents, cError
+				}
+			}
+		}
+
+		if token.Type == html.EndTagToken {
+			if len(parents) > 0 && parents[len(parents)-1] == tagName {
+				parents = popLast(parents)
+			} else if len(parents) == 0 ||
+				parents[len(parents)-1] != tagName {
+				index := indexOf(parents, tagName)
+				if index > -1 {
+					missingTagName := parents[len(parents)-1]
+					parents = parents[0:index]
+					if !v.IsValidSelfClosingTag(missingTagName) {
+						cError := v.checkErrorCallback(missingTagName,
+							"", "", pos, InvNotProperlyClosed)
+						if cError != nil {
+							return parents, cError
+						}
+					}
+				} else {
+					cError := v.checkErrorCallback(tagName,
+						"", "", pos, InvClosedBeforeOpened)
+					if cError != nil {
+						return parents, cError
+					}
+				}
+			}
+		}
+	}
+
+	return parents, nil
 }
