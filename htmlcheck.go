@@ -1,7 +1,6 @@
 package htmlcheck
 
 import (
-	"unicode/utf8"
 	"fmt"
 	"golang.org/x/net/html"
 	"io"
@@ -143,12 +142,11 @@ func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
 }
 
 func updateLineColumns(str string, errors []*ValidationError) {
-	str = strings.Replace(str,"\r","",-1)
 	lines := strings.Split(str, "\n")
 	for _, k := range errors {
 		charCount := 0
 		for i, l := range lines {
-			lineLen := utf8.RuneCountInString(l) + 1
+			lineLen := len(l) + 1
 			if k.Pos.Start < (charCount + lineLen) {
 				tPos := TextPos{i + 1, k.Pos.Start - charCount + 1}
 				k.TextPos = &tPos
@@ -169,7 +167,6 @@ func (v *Validator) checkErrorCallback(tagName string, attr string,
 
 func (v *Validator) ValidateHtml(r io.Reader) []*ValidationError {
 	d := html.NewTokenizer(r)
-	d.SetMaxBuf(400000)
 	parents := []string{}
 	var err *ValidationError
 	errors := []*ValidationError{}
@@ -238,7 +235,7 @@ func popLast(list []string) []string {
 }
 
 func getPosition(d *html.Tokenizer)Span{
-	posStart, posEnd := d.GetPosition()
+	posStart, posEnd := d.GetRawPosition()
 	return Span{posStart, posEnd}
 }
 
@@ -251,10 +248,9 @@ func (v *Validator) checkToken(d *html.Tokenizer,
 		return parents, &ValidationError{"", "", InvEOF, Span{0, 0}, nil}
 	}
 	
-	//pos := getPosition(d)
-	token := d.Token()
 	pos := getPosition(d)
-	fmt.Println(token.String(),pos)
+	token := d.Token()
+	//pos := getPosition(d)
 	
 	if tokenType == html.EndTagToken ||
 		tokenType == html.StartTagToken ||
