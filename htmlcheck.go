@@ -2,10 +2,12 @@ package htmlcheck
 
 import (
 	"fmt"
-	"golang.org/x/net/html"
 	"io"
 	"strconv"
 	"strings"
+
+	//"golang.org/x/net/html"
+	html "github.com/BlackEspresso/htmlcheck/htmlp"
 )
 
 type ErrorReason int
@@ -217,7 +219,7 @@ func (v *Validator) checkParents(d *html.Tokenizer, parents []string) *Validatio
 		if v.IsValidSelfClosingTag(tagName) {
 			continue
 		}
-		
+
 		pos := getPosition(d)
 		cError := v.checkErrorCallback(tagName, "", "", pos, InvNotProperlyClosed)
 		if cError != nil {
@@ -234,7 +236,7 @@ func popLast(list []string) []string {
 	return list[0 : len(list)-1]
 }
 
-func getPosition(d *html.Tokenizer)Span{
+func getPosition(d *html.Tokenizer) Span {
 	posStart, posEnd := d.GetRawPosition()
 	return Span{posStart, posEnd}
 }
@@ -247,11 +249,11 @@ func (v *Validator) checkToken(d *html.Tokenizer,
 	if tokenType == html.ErrorToken {
 		return parents, &ValidationError{"", "", InvEOF, Span{0, 0}, nil}
 	}
-	
+
 	pos := getPosition(d)
 	token := d.Token()
 	//pos := getPosition(d)
-	
+
 	if tokenType == html.EndTagToken ||
 		tokenType == html.StartTagToken ||
 		tokenType == html.SelfClosingTagToken {
