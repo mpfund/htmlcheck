@@ -20,20 +20,20 @@ func main() {
 
 	validater.AddValidTag(validLink)
 	// first check
-	err := validater.ValidateHtmlString("<a href='http://google.com'>m</a>")
-	if len(err) == 0 {
+	errors := validater.ValidateHtmlString("<a href='http://google.com'>m</a>")
+	if len(errors) == 0 {
 		fmt.Println("ok")
 	} else {
-		fmt.Println(err)
+		fmt.Println(errors)
 	}
 
 	// second check
 	// notice the missing / in the second <a>:
-	err = validater.ValidateHtmlString("<a href='http://google.com'>m<a>")
-	if len(err) == 0 {
+	errors = validater.ValidateHtmlString("<a href='http://google.com'>m<a>")
+	if len(errors) == 0 {
 		fmt.Println("ok")
 	} else {
-		fmt.Println(err)
+		fmt.Println(errors)
 	}
 }
 ```
