@@ -152,7 +152,6 @@ func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
 		} else {
 			//test reg ex
 			tag := v.validTags[""]
-			log.Println(tag)
 			if tag.AttrRegEx != "" {
 				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
 				if err == nil && matches {
