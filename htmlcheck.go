@@ -3,6 +3,7 @@ package htmlcheck
 import (
 	"fmt"
 	"io"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -90,7 +91,7 @@ type Validator struct {
 	validTags            map[string]*ValidTag
 }
 
-func (v *Validator) AddValidTags(validTags []ValidTag) {
+func (v *Validator) AddValidTags(validTags []*ValidTag) {
 	if v.validSelfClosingTags == nil {
 		v.validSelfClosingTags = make(map[string]bool)
 	}
@@ -109,12 +110,18 @@ func (v *Validator) AddValidTags(validTags []ValidTag) {
 		for _, a := range tag.Attrs {
 			v.validTagMap[tag.Name][a] = true
 		}
-		v.validTags[tag.Name] = &tag
+		if tag.Name == "" {
+			_, hasGlobalTag := v.validTags[""]
+			if hasGlobalTag {
+				log.Println("second global tag")
+			}
+		}
+		v.validTags[tag.Name] = tag
 	}
 }
 
 func (v *Validator) AddValidTag(validTag ValidTag) {
-	v.AddValidTags([]ValidTag{validTag})
+	v.AddValidTags([]*ValidTag{&validTag})
 }
 
 func (v *Validator) RegisterCallback(f ErrorCallback) {
@@ -145,6 +152,7 @@ func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
 		} else {
 			//test reg ex
 			tag := v.validTags[""]
+			log.Println(tag)
 			if tag.AttrRegEx != "" {
 				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
 				if err == nil && matches {

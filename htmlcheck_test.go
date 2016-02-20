@@ -11,7 +11,7 @@ func TestMain(m *testing.M) {
 	v.AddValidTag(ValidTag{
 		Name:          "", //global tag
 		Attrs:         []string{"id"},
-		AttrRegEx:     "data-",
+		AttrRegEx:     "^data-",
 		IsSelfClosing: true,
 	})
 	v.AddValidTag(ValidTag{
@@ -120,7 +120,7 @@ func Test_NextedTagsWithUnkonwAttribute2(t *testing.T) {
 }
 
 func Test_AttrRegEx(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a data-test='kkk'></b>")
+	errors := v.ValidateHtmlString("<style data-jiis='cc' id='gstyle'></style>")
 	checkErrors(t, errors)
 }
 
