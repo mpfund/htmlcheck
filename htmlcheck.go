@@ -3,6 +3,7 @@ package htmlcheck
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -37,6 +38,7 @@ type ErrorCallback func(tagName string, attributeName string,
 type ValidTag struct {
 	Name          string
 	Attrs         []string
+	AttrRegEx     string
 	IsSelfClosing bool
 }
 
@@ -85,6 +87,7 @@ type Validator struct {
 	validSelfClosingTags map[string]bool
 	errorCallback        ErrorCallback
 	StopAfterFirstError  bool
+	validTags            map[string]*ValidTag
 }
 
 func (v *Validator) AddValidTags(validTags []ValidTag) {
@@ -93,6 +96,9 @@ func (v *Validator) AddValidTags(validTags []ValidTag) {
 	}
 	if v.validTagMap == nil {
 		v.validTagMap = make(map[string]map[string]bool)
+	}
+	if v.validTags == nil {
+		v.validTags = map[string]*ValidTag{}
 	}
 
 	for _, tag := range validTags {
@@ -103,6 +109,7 @@ func (v *Validator) AddValidTags(validTags []ValidTag) {
 		for _, a := range tag.Attrs {
 			v.validTagMap[tag.Name][a] = true
 		}
+		v.validTags[tag.Name] = &tag
 	}
 }
 
@@ -128,12 +135,42 @@ func (v *Validator) IsValidSelfClosingTag(tagName string) bool {
 }
 
 func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
-	attrs, ok := v.validTagMap[tagName]
-	if !ok {
-		return false
+	attrs, hasTag := v.validTagMap[tagName]
+	gAttrs, hasGlobals := v.validTagMap[""] //check global attributes
+
+	if hasGlobals {
+		_, hasGlobalAttr := gAttrs[attrName]
+		if hasGlobalAttr {
+			return true
+		} else {
+			//test reg ex
+			tag := v.validTags[""]
+			if tag.AttrRegEx != "" {
+				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
+				if err == nil && matches {
+					return true
+				}
+			}
+		}
 	}
-	_, ok = attrs[attrName]
-	return ok
+
+	if hasTag {
+		_, hasAttr := attrs[attrName]
+		if hasAttr {
+			return true
+		} else {
+			//test reg ex
+			tag := v.validTags[tagName]
+			if tag.AttrRegEx != "" {
+				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
+				if err == nil && matches {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
