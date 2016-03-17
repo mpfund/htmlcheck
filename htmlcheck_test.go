@@ -2,17 +2,20 @@ package htmlcheck
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/BlackEspresso/htmlcheck/htmlp"
 )
 
 var v Validator = Validator{}
 
 func TestMain(m *testing.M) {
 	v.AddValidTag(ValidTag{
-		Name:          "", //global tag
-		Attrs:         []string{"id"},
-		AttrRegEx:     "^data-",
-		IsSelfClosing: true,
+		Name:           "", //global tag
+		Attrs:          []string{"id"},
+		AttrStartsWith: "data-",
+		IsSelfClosing:  true,
 	})
 	v.AddValidTag(ValidTag{
 		Name:          "a",
@@ -119,13 +122,15 @@ func Test_NextedTagsWithUnkonwAttribute2(t *testing.T) {
 	}
 }
 
-func Test_AttrRegEx(t *testing.T) {
+func Test_AttrStartsWith(t *testing.T) {
 	errors := v.ValidateHtmlString("<style data-jiis='cc' id='gstyle'></style>")
 	checkErrors(t, errors)
 }
 
 func Test_LineColumn_SingleLine(t *testing.T) {
-	errors := v.ValidateHtmlString("<b><a kkk='kkk'></b>")
+	str := "<b><a kkk='kkk'></b>"
+	errors := v.ValidateHtmlString(str)
+	GetErrorLines(str, errors)
 	if errors[0].TextPos.Line != 1 {
 		t.Fatal(errors[0].TextPos)
 	}
@@ -135,7 +140,10 @@ func Test_LineColumn_SingleLine(t *testing.T) {
 }
 
 func Test_LineColumn_MultipleLines(t *testing.T) {
-	errors := v.ValidateHtmlString("<b></b>\n<b></b>\n<b kkk='kkk'></b>")
+	str := "<b></b>\n<b></b>\n<b kkk='kkk'></b>"
+	errors := v.ValidateHtmlString(str)
+	GetErrorLines(str, errors)
+
 	if errors[0].TextPos.Line != 3 {
 		t.Fatal(errors[0].TextPos)
 	}
@@ -169,4 +177,25 @@ func Test_Callback(t *testing.T) {
 	}
 
 	checkErrors(t, errors)
+}
+
+func BenchmarkValidateHtmlString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		v.ValidateHtmlString("<b></b>\n<b></b>\n<b kkk='kkk'></b>")
+	}
+}
+
+func BenchmarkPlainTokenizerString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		str := "<b></b>\n<b></b>\n<b kkk='kkk'></b>"
+		d := htmlp.NewTokenizer(strings.NewReader(str))
+		for {
+			d.Token()
+			t := d.Next()
+			if t == htmlp.ErrorToken {
+				break
+			}
+
+		}
+	}
 }

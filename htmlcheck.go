@@ -37,10 +37,11 @@ type ErrorCallback func(tagName string, attributeName string,
 	value string, reason ErrorReason) *ValidationError
 
 type ValidTag struct {
-	Name          string
-	Attrs         []string
-	AttrRegEx     string
-	IsSelfClosing bool
+	Name           string
+	Attrs          []string
+	AttrRegEx      string
+	AttrStartsWith string
+	IsSelfClosing  bool
 }
 
 type ValidationError struct {
@@ -145,46 +146,54 @@ func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
 	attrs, hasTag := v.validTagMap[tagName]
 	gAttrs, hasGlobals := v.validTagMap[""] //check global attributes
 
-	if hasGlobals {
-		_, hasGlobalAttr := gAttrs[attrName]
-		if hasGlobalAttr {
-			return true
-		} else {
-			//test reg ex
-			tag := v.validTags[""]
-			if tag.AttrRegEx != "" {
-				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
-				if err == nil && matches {
-					return true
-				}
-			}
-		}
-	}
-
 	if hasTag {
 		_, hasAttr := attrs[attrName]
 		if hasAttr {
 			return true
 		} else {
 			//test reg ex
-			tag := v.validTags[tagName]
-			if tag.AttrRegEx != "" {
-				matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
-				if err == nil && matches {
-					return true
-				}
+			ok := v.testAttribute(tagName, attrName)
+			if ok {
+				return true
 			}
+		}
+	}
+
+	if hasGlobals {
+		_, hasGlobalAttr := gAttrs[attrName]
+		if hasGlobalAttr {
+			return true
+		} else {
+			return v.testAttribute("", attrName)
 		}
 	}
 
 	return false
 }
 
+func (v *Validator) testAttribute(tagName string, attrName string) bool {
+	tag := v.validTags[tagName]
+	if tag.AttrStartsWith != "" {
+		return strings.HasPrefix(attrName, tag.AttrStartsWith)
+	}
+	if tag.AttrRegEx != "" {
+		matches, err := regexp.MatchString(tag.AttrRegEx, attrName)
+		if err == nil && matches {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
 	buffer := strings.NewReader(str)
 	errors := v.ValidateHtml(buffer)
-	updateLineColumns(str, errors)
+	//updateLineColumns(str, errors)
 	return errors
+}
+
+func GetErrorLines(str string, errors []*ValidationError) {
+	updateLineColumns(str, errors)
 }
 
 func updateLineColumns(str string, errors []*ValidationError) {
