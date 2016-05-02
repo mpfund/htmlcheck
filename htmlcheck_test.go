@@ -11,6 +11,10 @@ import (
 var v Validator = Validator{}
 
 func TestMain(m *testing.M) {
+	v.AddGroup(&TagGroup{
+		Name:  "example",
+		Attrs: []string{"test1", "test2"},
+	})
 	v.AddValidTag(ValidTag{
 		Name:           "", //global tag
 		Attrs:          []string{"id"},
@@ -20,6 +24,7 @@ func TestMain(m *testing.M) {
 	v.AddValidTag(ValidTag{
 		Name:          "a",
 		Attrs:         []string{"href"},
+		Groups:        []string{"example"},
 		IsSelfClosing: true,
 	})
 	v.AddValidTag(ValidTag{
@@ -75,7 +80,7 @@ func Test_UnknownAttr(t *testing.T) {
 
 func Test_DuplicatedAttr(t *testing.T) {
 	errors := v.ValidateHtmlString("<a href='test' href='test2'>")
-	hasErrors(t, errors, "duplicated attribute")
+	hasErrors(t, errors, "duplicated")
 }
 
 func Test_SingleUnknownTag(t *testing.T) {
@@ -90,6 +95,11 @@ func Test_UnclosedTag(t *testing.T) {
 
 func Test_NestedTags(t *testing.T) {
 	errors := v.ValidateHtmlString("<b><a></a></b>")
+	checkErrors(t, errors)
+}
+
+func Test_Groups(t *testing.T) {
+	errors := v.ValidateHtmlString("<a test1=4 test2=5></a>")
 	checkErrors(t, errors)
 }
 

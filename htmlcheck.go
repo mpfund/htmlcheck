@@ -36,10 +36,16 @@ type TextPos struct {
 type ErrorCallback func(tagName string, attributeName string,
 	value string, reason ErrorReason) *ValidationError
 
+type TagGroup struct {
+	Name  string
+	Attrs []string
+}
+
 type ValidTag struct {
 	Name           string
 	Attrs          []string
 	AttrRegEx      string
+	Groups         []string
 	AttrStartsWith string
 	IsSelfClosing  bool
 }
@@ -90,6 +96,7 @@ type Validator struct {
 	errorCallback        ErrorCallback
 	StopAfterFirstError  bool
 	validTags            map[string]*ValidTag
+	validGroups          map[string]*TagGroup
 }
 
 func (v *Validator) AddValidTags(validTags []*ValidTag) {
@@ -118,11 +125,48 @@ func (v *Validator) AddValidTags(validTags []*ValidTag) {
 			}
 		}
 		v.validTags[tag.Name] = tag
+
+		for _, groupName := range tag.Groups {
+			group := v.validGroups[groupName]
+			for _, attr := range group.Attrs {
+				v.validTagMap[tag.Name][attr] = true
+			}
+		}
 	}
 }
 
 func (v *Validator) AddValidTag(validTag ValidTag) {
 	v.AddValidTags([]*ValidTag{&validTag})
+}
+
+func (v *Validator) AddGroup(group *TagGroup) {
+	v.AddGroups([]*TagGroup{group})
+}
+
+func (v *Validator) AddGroups(groups []*TagGroup) {
+	if v.validGroups == nil {
+		v.validGroups = map[string]*TagGroup{}
+	}
+	for _, g := range groups {
+		v.validGroups[g.Name] = g
+
+		for _, t := range v.validTags {
+			if t.HasGroup(g.Name) {
+				for _, attr := range g.Attrs {
+					v.validTagMap[t.Name][attr] = true
+				}
+			}
+		}
+	}
+}
+
+func (tag *ValidTag) HasGroup(groupName string) bool {
+	for _, g := range tag.Groups {
+		if g == groupName {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *Validator) RegisterCallback(f ErrorCallback) {
