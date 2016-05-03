@@ -118,6 +118,11 @@ func Test_NextedTagsWithSelfClosing(t *testing.T) {
 	checkErrors(t, errors)
 }
 
+func Test_AttributesWithoutValue(t *testing.T) {
+	errors := v.ValidateHtmlString("<a test1 test2></a>")
+	checkErrors(t, errors)
+}
+
 func Test_NextedTagsWithUnkonwAttribute1(t *testing.T) {
 	errors := v.ValidateHtmlString("<b kkk='kkk'><a></b>")
 	if len(errors) != 1 {

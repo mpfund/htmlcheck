@@ -1,8 +1,10 @@
 package htmlcheck
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"regexp"
 	"strconv"
@@ -56,6 +58,11 @@ type ValidationError struct {
 	Reason        ErrorReason
 	Pos           Span
 	TextPos       *TextPos
+}
+
+type TagsFile struct {
+	Groups []*TagGroup
+	Tags   []*ValidTag
 }
 
 func (e *ValidationError) Error() string {
@@ -185,6 +192,35 @@ func (v *Validator) IsValidSelfClosingTag(tagName string) bool {
 	}
 	return ok
 }
+
+func (v *Validator) LoadTagsFromFile(path string) error {
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	tagFile := TagsFile{}
+	err = json.Unmarshal(content, &tagFile)
+
+	if err != nil {
+		return err
+	}
+
+	v.AddGroups(tagFile.Groups)
+	v.AddValidTags(tagFile.Tags)
+
+	return nil
+}
+
+/*func (v *Validator) WriteTagsToFile(path string) error {
+	tagFile := TagsFile{v.validTags}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	ioutil.WriteFile(path, b, 755)
+	return nil
+}*/
 
 func (v *Validator) IsValidAttribute(tagName string, attrName string) bool {
 	attrs, hasTag := v.validTagMap[tagName]
