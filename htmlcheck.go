@@ -272,7 +272,7 @@ func (v *Validator) ValidateHtmlString(str string) []*ValidationError {
 	return errors
 }
 
-func GetErrorLines(str string, errors []*ValidationError) {
+func UpdateErrorLines(str string, errors []*ValidationError) {
 	updateLineColumns(str, errors)
 }
 
