@@ -65,6 +65,15 @@ type TagsFile struct {
 	Tags   []*ValidTag
 }
 
+type Validator struct {
+	validTagMap          map[string]map[string]bool
+	validSelfClosingTags map[string]bool
+	errorCallback        ErrorCallback
+	StopAfterFirstError  bool
+	validTags            map[string]*ValidTag
+	validGroups          map[string]*TagGroup
+}
+
 func (e *ValidationError) Error() string {
 	text := ""
 	switch e.Reason {
@@ -95,15 +104,6 @@ func (e *ValidationError) Error() string {
 	}
 
 	return text + pos
-}
-
-type Validator struct {
-	validTagMap          map[string]map[string]bool
-	validSelfClosingTags map[string]bool
-	errorCallback        ErrorCallback
-	StopAfterFirstError  bool
-	validTags            map[string]*ValidTag
-	validGroups          map[string]*TagGroup
 }
 
 func (v *Validator) AddValidTags(validTags []*ValidTag) {
