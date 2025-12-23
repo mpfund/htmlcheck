@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	//"golang.org/x/net/html"
-	html "github.com/BlackEspresso/htmlcheck/htmlp"
+	html "github.com/mpfund/htmlcheck/htmlp"
 )
 
 type ErrorReason int
