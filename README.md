@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/BlackEspresso/htmlcheck"
+	"github.com/mpfund/htmlcheck"
 )
 
 func main() {
